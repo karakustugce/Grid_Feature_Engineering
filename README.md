@@ -28,4 +28,4 @@ This is a learning and research project, not an investment recommendation or a p
 5. Baseline and evaluation: use chronological validation and reserve the final 20% for testing.
 6. Incremental models: start interpretable and add complexity only when validation supports it.
 
-No single feed can guarantee every public story or post about Apple. We will document source coverage and access limits. Initial candidates are GDELT for broad news, Apple Newsroom and SEC EDGAR for primary disclosures, and X API for social posts when an authorized token is available. See [the research design](docs/RESEARCH_DESIGN.md) for details.
+No single feed can guarantee every public story or post about Apple. We will document source coverage and access limits. Initial candidates are GDELT for broad news, Apple Newsroom and SEC EDGAR for primary disclosures, and X API for social posts when an authorized token is available. The first importable source pilot is [the GDELT n8n workflow](workflows/01_gdelt_apple_news_pilot.json); see [its run instructions](workflows/README.md) and [the research design](docs/RESEARCH_DESIGN.md).
