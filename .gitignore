@@ -1,0 +1,22 @@
+# Credentials
+.env
+.env.*
+!.env.example
+
+# Collected and generated datasets
+data/raw/
+data/processed/
+data/exports/
+outputs/
+
+# Local databases and model artifacts
+*.sqlite
+*.sqlite3
+*.db
+models/
+
+# Python and notebook cache
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.DS_Store
