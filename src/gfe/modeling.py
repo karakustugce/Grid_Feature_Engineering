@@ -143,19 +143,26 @@ def run_ablation(panel: pd.DataFrame, groups: dict[str, list[str]], order: list[
     panel = panel.dropna(subset=["y_logret", "y_close"])
     dev, test = chrono_split(panel)
     rows = [evaluate(test["aapl_close"], test["y_close"], np.zeros(len(test)), "persistence")]
+    preds = {"persistence": test["aapl_close"].values.copy()}
+    to_close = lambda r_hat: test["aapl_close"].values * np.exp(r_hat)  # noqa: E731
     cols: list[str] = []
     for g in order:
         cols = cols + [c for c in groups[g] if c in panel and c not in cols]
         ridge, info = fit_ridge(dev[cols], dev["y_logret"])
-        r = evaluate(test["aapl_close"], test["y_close"], ridge.predict(test[cols]), f"ridge +{g}")
+        r_hat = ridge.predict(test[cols])
+        preds[f"ridge +{g}"] = to_close(r_hat)
+        r = evaluate(test["aapl_close"], test["y_close"], r_hat, f"ridge +{g}")
         r.update(n_features=len(cols), alpha=info["alpha"])
         rows.append(r)
-        if use_mlp:
+        if use_mlp and len(dev) >= 80:   # too few rows for a validation split otherwise
             pred, minfo = fit_mlp(dev[cols], dev["y_logret"])
-            r = evaluate(test["aapl_close"], test["y_close"], pred(test[cols]), f"mlp +{g}")
+            r_hat = pred(test[cols])
+            preds[f"mlp +{g}"] = to_close(r_hat)
+            r = evaluate(test["aapl_close"], test["y_close"], r_hat, f"mlp +{g}")
             r.update(n_features=len(cols), epochs=minfo["epochs_run"])
             rows.append(r)
     res = pd.DataFrame(rows)
     base = res.loc[0, "mae_usd"]
     res["mae_vs_persistence_pct"] = (res["mae_usd"] / base - 1) * 100
+    res.attrs["predictions"] = pd.DataFrame(preds, index=test.index).assign(actual=test["y_close"].values)
     return res, dev, test

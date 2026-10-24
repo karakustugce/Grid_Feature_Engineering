@@ -13,7 +13,8 @@ FEATURE_GROUPS_ORDER = ["price", "calendar", "scheduled", "market", "news_counts
 
 def build_panel(px: pd.DataFrame, ctx: dict[str, pd.Series] | None = None,
                 events: pd.DataFrame | None = None, scheduled: pd.DataFrame | None = None,
-                n_text_components: int = 32, test_frac: float = 0.20):
+                n_text_components: int = 32, test_frac: float = 0.20,
+                news_period_only: bool = True):
     px = px.sort_index()
     start, end = px.index.min().strftime("%Y-%m-%d"), px.index.max().strftime("%Y-%m-%d")
     cal = build_calendar_features(start, end)
@@ -51,6 +52,12 @@ def build_panel(px: pd.DataFrame, ctx: dict[str, pd.Series] | None = None,
         counts = aggregate_windows(ev, panel["cutoff_utc"])
         groups["news_counts"] = list(counts.columns)
         panel = panel.join(counts)
+        if news_period_only:
+            # Before collection started every news column is 0, which the model would read as
+            # "no news". Keep only sessions from the first one that has collected news.
+            first = panel.index[panel["news_n_items"].fillna(0).cumsum() > 0]
+            if len(first):
+                panel = panel.loc[first[0]:]
         # Text matrix: fit vocabulary + SVD on development-period items ONLY.
         usable = panel.dropna(subset=["y_logret"])
         dev_end = usable.index[int(np.floor(len(usable) * (1 - test_frac))) - 1]

@@ -48,7 +48,13 @@ No single feed can guarantee every public story or post about Apple. We will doc
 ```bash
 pip install -r requirements.txt
 pytest -q
-python scripts/run_synthetic_demo.py
+python scripts/run_synthetic_demo.py              # pipeline check -> outputs/synthetic_report.html
+
+python scripts/export_events.py                   # news from Supabase -> data/raw/events.csv
+python scripts/build_news_matrix.py               # -> data/processed/news_matrix.csv (one row per cutoff)
 python scripts/fetch_market_data.py --start 2015-01-01
-python scripts/run_real.py --no-mlp
+python scripts/run_real.py --events data/raw/events.csv
+open outputs/report.html                          # the run report
 ```
+
+`run_real.py` keeps only sessions from the first day with collected news (before that every news column would be 0). Use `--all-history` to keep the full price history for price/calendar/market baselines.

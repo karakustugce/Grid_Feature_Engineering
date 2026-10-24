@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from gfe.calendar_features import sessions, cutoff_utc  # noqa: E402
 from gfe.panel import build_panel, FEATURE_GROUPS_ORDER  # noqa: E402
 from gfe.modeling import run_ablation  # noqa: E402
+from gfe.report import write_report  # noqa: E402
 
 rng = np.random.default_rng(7)
 OUT = Path(__file__).resolve().parents[1] / "outputs"
@@ -68,4 +69,7 @@ print(f"rows={len(panel)} dev={len(dev)} ({dev.index[0].date()}..{dev.index[-1].
 print(f"text matrix fitted on items up to {text_info['fitted_until']} ({text_info['n_train_items']} items)")
 print(res[["model", "n_features", "mae_usd", "mae_vs_persistence_pct", "dir_acc"]].round(4).to_string(index=False))
 res.to_csv(OUT / "synthetic_ablation.csv", index=False)
+print("report:", write_report(res, dev, test, groups, text_info, OUT / "synthetic_report.html",
+                              title="Synthetic data (pipeline check)",
+                              data_note="Synthetic prices with a planted news effect; not a result about Apple."))
 (OUT / "synthetic_text_terms.json").write_text(json.dumps(text_info["top_terms"], indent=1))
