@@ -1,0 +1,52 @@
+{
+  "name": "AAPL news pilot - GDELT RSS",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "8a2b6de1-467d-47fb-8d27-aedb84101e01",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.gdeltproject.org/api/v2/doc/doc?query=(Apple%20OR%20AAPL%20OR%20iPhone%20OR%20%22Apple%20Watch%22%20OR%20MacBook)&mode=artlist&format=rss&timespan=1week&maxrecords=250&sort=datedesc",
+        "options": {}
+      },
+      "id": "ae65c76b-f0aa-4302-a220-d7f5cc49a7a7",
+      "name": "Read GDELT Results",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        500,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read GDELT Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/New_York"
+  },
+  "versionId": "21b839e6-820b-4b51-8d66-2fa29a5c78f5",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}
