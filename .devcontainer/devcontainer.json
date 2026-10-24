@@ -1,0 +1,18 @@
+{
+  "name": "n8n Community for Apple News Research",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:4": {
+      "moby": true,
+      "dockerDashComposeVersion": "v2"
+    }
+  },
+  "forwardPorts": [5678],
+  "portsAttributes": {
+    "5678": {
+      "label": "n8n Community",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postStartCommand": "bash .devcontainer/start-n8n.sh"
+}
