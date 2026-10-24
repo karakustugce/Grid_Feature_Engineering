@@ -29,3 +29,26 @@ This is a learning and research project, not an investment recommendation or a p
 6. Incremental models: start interpretable and add complexity only when validation supports it.
 
 No single feed can guarantee every public story or post about Apple. We will document source coverage and access limits. Initial candidates are GDELT for broad news, Apple Newsroom and SEC EDGAR for primary disclosures, and X API for social posts when an authorized token is available. The first importable source pilot is [the GDELT n8n workflow](workflows/01_gdelt_apple_news_pilot.json); see [its run instructions](workflows/README.md) and [the research design](docs/RESEARCH_DESIGN.md).
+
+## Code layout
+
+| Path | What it does |
+|---|---|
+| `src/gfe/calendar_features.py` | Exchange-calendar X variables and scheduled events (earnings, launches) gated by announcement time |
+| `src/gfe/market_features.py` | AAPL price features, cross-asset context (SPY, QQQ, VIX, gold, dollar, yields), target |
+| `src/gfe/text_features.py` | News windows between cutoffs, attention/tone aggregates, TF-IDF → SVD text matrix fitted on training items only |
+| `src/gfe/modeling.py` | Chronological 80/20 split, persistence baseline, walk-forward ridge, small MLP with early stopping |
+| `src/gfe/panel.py` | Joins everything into one row per cutoff session |
+| `scripts/run_synthetic_demo.py` | Mechanics check on synthetic data with a planted news effect |
+| `scripts/fetch_market_data.py`, `scripts/run_real.py` | Real-data pull and feature-family ablation |
+| `tests/test_leakage.py` | Holiday/early-close targets, cutoff windows, announcement gating, split order |
+| `docs/FEATURE_CATALOG.md` | Every X variable with its economic mechanism |
+| `workflows/02_multisource_normalize.json` | n8n: GDELT + Google News + Apple Newsroom + SEC → normalize → audit/dedupe |
+
+```bash
+pip install -r requirements.txt
+pytest -q
+python scripts/run_synthetic_demo.py
+python scripts/fetch_market_data.py --start 2015-01-01
+python scripts/run_real.py --no-mlp
+```

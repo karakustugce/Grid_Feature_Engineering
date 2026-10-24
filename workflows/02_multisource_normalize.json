@@ -1,0 +1,370 @@
+{
+  "name": "AAPL news 02 - multi-source normalize + audit",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "9ef0ff96-d3b4-5133-a3b4-730dccd1ee8d",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One item describing this run. Every normalized row carries these fields.\nconst now = new Date();\nreturn [{\n  json: {\n    ingestion_run_id: `n8n-${$execution.id}-${now.toISOString().slice(0, 19).replace(/[-:T]/g, '')}`,\n    query_version: 'aapl-v2-2026-10-24',\n    first_seen_at_utc: now.toISOString(),\n    lookback_days: 3,\n  },\n}];\n"
+      },
+      "id": "69458516-2838-5eda-8be0-946bbe94ac73",
+      "name": "Run Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.gdeltproject.org/api/v2/doc/doc?query=%28%22Apple%20Inc%22%20OR%20AAPL%20OR%20%22Tim%20Cook%22%20OR%20iPhone%20OR%20%22App%20Store%22%20OR%20%22Apple%20Intelligence%22%29%20sourcelang%3Aenglish&mode=artlist&format=json&timespan=3d&maxrecords=250&sort=datedesc",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "4e91e4dc-23c2-566e-a2e1-7c7754e72be9",
+      "name": "GDELT DOC (JSON)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        100
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "url": "https://news.google.com/rss/search?q=Apple%20%28AAPL%20OR%20iPhone%20OR%20%22Tim%20Cook%22%29%20when%3A3d&hl=en-US&gl=US&ceid=US:en",
+        "options": {}
+      },
+      "id": "029bf24c-a2e7-513e-ad02-8e3f95285bd5",
+      "name": "Google News RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "url": "https://www.apple.com/newsroom/rss-feed.rss",
+        "options": {}
+      },
+      "id": "66da22e6-8942-58be-afbc-b2cfe8344e88",
+      "name": "Apple Newsroom RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        500
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "url": "https://data.sec.gov/submissions/CIK0000320193.json",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Grid Feature Engineering research YOUR_NAME your_email@example.com"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "ce4194cb-d3f7-57d6-8c90-010014550c17",
+      "name": "SEC EDGAR Submissions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        700
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Shared helpers, inlined at the top of every normalizer by build_02.py.\nconst RUN = $('Run Config').first().json;\nconst nowIso = RUN.first_seen_at_utc;\nconst BACKFILL_HOURS = 6;\n\nfunction toIso(v) {\n  if (!v) return null;\n  // GDELT seendate: 20261024T123000Z\n  const m = /^(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})Z$/.exec(String(v));\n  const d = m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6])) : new Date(v);\n  return isNaN(d) ? null : d.toISOString();\n}\n\nfunction availability(published, firstSeen) {\n  // Live capture: available when we first saw it. Historical backfill: we did not\n  // observe it live, so use publication + 15 min and label the row honestly.\n  if (!published) return { available_at_utc: firstSeen, availability_basis: 'observed_no_pubdate' };\n  const lagH = (new Date(firstSeen) - new Date(published)) / 36e5;\n  if (lagH <= BACKFILL_HOURS) return { available_at_utc: firstSeen, availability_basis: 'observed' };\n  const a = new Date(new Date(published).getTime() + 15 * 60000).toISOString();\n  return { available_at_utc: a, availability_basis: 'backfill_published_plus_15m' };\n}\n\nfunction domainOf(u) {\n  try { return new URL(u).hostname.replace(/^www\\./, '').toLowerCase(); } catch (e) { return null; }\n}\n\nfunction row(source, rec) {\n  const pub = toIso(rec.published_at_utc);\n  return {\n    source,\n    source_record_id: rec.source_record_id || null,\n    published_at_utc: pub,\n    first_seen_at_utc: nowIso,\n    ...availability(pub, nowIso),\n    ingestion_run_id: RUN.ingestion_run_id,\n    query_version: RUN.query_version,\n    url: rec.url || null,\n    title: rec.title || '',\n    text_raw: rec.text_raw || '',\n    source_domain: rec.source_domain || domainOf(rec.url),\n    language: rec.language || null,\n    raw_payload: JSON.stringify(rec.raw || {}).slice(0, 4000),\n  };\n}\n\nfunction failed(source, items) {\n  // Branch nodes use \"continue on error\": surface the failure as a row for the run report.\n  const e = items.find(i => i.json && i.json.error);\n  return e ? [{ json: { source, _error: String(e.json.error.message || e.json.error) } }] : null;\n}\n\n// ---- node code ----\nconst items = $input.all();\nconst f = failed('gdelt', items); if (f) return f;\nconst arts = (items[0] && items[0].json.articles) || [];\nreturn arts.map(a => ({\n  json: row('gdelt', {\n    source_record_id: a.url,\n    published_at_utc: a.seendate,          // GDELT's first-seen time; the publisher time is not provided\n    url: a.url,\n    title: a.title,\n    source_domain: a.domain,\n    language: a.language,\n    raw: { seendate: a.seendate, domain: a.domain, sourcecountry: a.sourcecountry, language: a.language },\n  }),\n}));\n"
+      },
+      "id": "3dd5f692-b8b7-578c-901d-2f331e82427a",
+      "name": "Normalize GDELT",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        100
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Shared helpers, inlined at the top of every normalizer by build_02.py.\nconst RUN = $('Run Config').first().json;\nconst nowIso = RUN.first_seen_at_utc;\nconst BACKFILL_HOURS = 6;\n\nfunction toIso(v) {\n  if (!v) return null;\n  // GDELT seendate: 20261024T123000Z\n  const m = /^(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})Z$/.exec(String(v));\n  const d = m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6])) : new Date(v);\n  return isNaN(d) ? null : d.toISOString();\n}\n\nfunction availability(published, firstSeen) {\n  // Live capture: available when we first saw it. Historical backfill: we did not\n  // observe it live, so use publication + 15 min and label the row honestly.\n  if (!published) return { available_at_utc: firstSeen, availability_basis: 'observed_no_pubdate' };\n  const lagH = (new Date(firstSeen) - new Date(published)) / 36e5;\n  if (lagH <= BACKFILL_HOURS) return { available_at_utc: firstSeen, availability_basis: 'observed' };\n  const a = new Date(new Date(published).getTime() + 15 * 60000).toISOString();\n  return { available_at_utc: a, availability_basis: 'backfill_published_plus_15m' };\n}\n\nfunction domainOf(u) {\n  try { return new URL(u).hostname.replace(/^www\\./, '').toLowerCase(); } catch (e) { return null; }\n}\n\nfunction row(source, rec) {\n  const pub = toIso(rec.published_at_utc);\n  return {\n    source,\n    source_record_id: rec.source_record_id || null,\n    published_at_utc: pub,\n    first_seen_at_utc: nowIso,\n    ...availability(pub, nowIso),\n    ingestion_run_id: RUN.ingestion_run_id,\n    query_version: RUN.query_version,\n    url: rec.url || null,\n    title: rec.title || '',\n    text_raw: rec.text_raw || '',\n    source_domain: rec.source_domain || domainOf(rec.url),\n    language: rec.language || null,\n    raw_payload: JSON.stringify(rec.raw || {}).slice(0, 4000),\n  };\n}\n\nfunction failed(source, items) {\n  // Branch nodes use \"continue on error\": surface the failure as a row for the run report.\n  const e = items.find(i => i.json && i.json.error);\n  return e ? [{ json: { source, _error: String(e.json.error.message || e.json.error) } }] : null;\n}\n\n// ---- node code ----\nconst items = $input.all();\nconst f = failed('google_news', items); if (f) return f;\nreturn items.map(i => {\n  const it = i.json;\n  // Titles look like \"Apple shares rise after ... - Reuters\"; keep the publisher.\n  const m = /\\s-\\s([^-]{2,60})$/.exec(it.title || '');\n  return {\n    json: row('google_news', {\n      source_record_id: it.guid || it.link,\n      published_at_utc: it.isoDate || it.pubDate,\n      url: it.link,                        // news.google.com redirect; resolve later if needed\n      title: it.title,\n      text_raw: it.contentSnippet || '',\n      source_domain: m ? m[1].trim().toLowerCase() : 'news.google.com',\n      language: 'en',\n      raw: { guid: it.guid, pubDate: it.pubDate, publisher: m ? m[1] : null },\n    }),\n  };\n});\n"
+      },
+      "id": "e4ba27d3-de13-5ce5-82ab-d7253fa55b55",
+      "name": "Normalize Google News",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        300
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Shared helpers, inlined at the top of every normalizer by build_02.py.\nconst RUN = $('Run Config').first().json;\nconst nowIso = RUN.first_seen_at_utc;\nconst BACKFILL_HOURS = 6;\n\nfunction toIso(v) {\n  if (!v) return null;\n  // GDELT seendate: 20261024T123000Z\n  const m = /^(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})Z$/.exec(String(v));\n  const d = m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6])) : new Date(v);\n  return isNaN(d) ? null : d.toISOString();\n}\n\nfunction availability(published, firstSeen) {\n  // Live capture: available when we first saw it. Historical backfill: we did not\n  // observe it live, so use publication + 15 min and label the row honestly.\n  if (!published) return { available_at_utc: firstSeen, availability_basis: 'observed_no_pubdate' };\n  const lagH = (new Date(firstSeen) - new Date(published)) / 36e5;\n  if (lagH <= BACKFILL_HOURS) return { available_at_utc: firstSeen, availability_basis: 'observed' };\n  const a = new Date(new Date(published).getTime() + 15 * 60000).toISOString();\n  return { available_at_utc: a, availability_basis: 'backfill_published_plus_15m' };\n}\n\nfunction domainOf(u) {\n  try { return new URL(u).hostname.replace(/^www\\./, '').toLowerCase(); } catch (e) { return null; }\n}\n\nfunction row(source, rec) {\n  const pub = toIso(rec.published_at_utc);\n  return {\n    source,\n    source_record_id: rec.source_record_id || null,\n    published_at_utc: pub,\n    first_seen_at_utc: nowIso,\n    ...availability(pub, nowIso),\n    ingestion_run_id: RUN.ingestion_run_id,\n    query_version: RUN.query_version,\n    url: rec.url || null,\n    title: rec.title || '',\n    text_raw: rec.text_raw || '',\n    source_domain: rec.source_domain || domainOf(rec.url),\n    language: rec.language || null,\n    raw_payload: JSON.stringify(rec.raw || {}).slice(0, 4000),\n  };\n}\n\nfunction failed(source, items) {\n  // Branch nodes use \"continue on error\": surface the failure as a row for the run report.\n  const e = items.find(i => i.json && i.json.error);\n  return e ? [{ json: { source, _error: String(e.json.error.message || e.json.error) } }] : null;\n}\n\n// ---- node code ----\nconst items = $input.all();\nconst f = failed('apple_newsroom', items); if (f) return f;\nreturn items.map(i => {\n  const it = i.json;\n  return {\n    json: row('apple_newsroom', {\n      source_record_id: it.id || it.guid || it.link,\n      published_at_utc: it.isoDate || it.pubDate,\n      url: it.link,\n      title: it.title,\n      text_raw: (it.contentSnippet || it.content || '').slice(0, 5000),\n      source_domain: 'apple.com',\n      language: 'en',\n      raw: { id: it.id || it.guid, pubDate: it.pubDate },\n    }),\n  };\n});\n"
+      },
+      "id": "f109e3fe-d6f2-561a-9e39-341f51d63150",
+      "name": "Normalize Apple Newsroom",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        500
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Shared helpers, inlined at the top of every normalizer by build_02.py.\nconst RUN = $('Run Config').first().json;\nconst nowIso = RUN.first_seen_at_utc;\nconst BACKFILL_HOURS = 6;\n\nfunction toIso(v) {\n  if (!v) return null;\n  // GDELT seendate: 20261024T123000Z\n  const m = /^(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})Z$/.exec(String(v));\n  const d = m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6])) : new Date(v);\n  return isNaN(d) ? null : d.toISOString();\n}\n\nfunction availability(published, firstSeen) {\n  // Live capture: available when we first saw it. Historical backfill: we did not\n  // observe it live, so use publication + 15 min and label the row honestly.\n  if (!published) return { available_at_utc: firstSeen, availability_basis: 'observed_no_pubdate' };\n  const lagH = (new Date(firstSeen) - new Date(published)) / 36e5;\n  if (lagH <= BACKFILL_HOURS) return { available_at_utc: firstSeen, availability_basis: 'observed' };\n  const a = new Date(new Date(published).getTime() + 15 * 60000).toISOString();\n  return { available_at_utc: a, availability_basis: 'backfill_published_plus_15m' };\n}\n\nfunction domainOf(u) {\n  try { return new URL(u).hostname.replace(/^www\\./, '').toLowerCase(); } catch (e) { return null; }\n}\n\nfunction row(source, rec) {\n  const pub = toIso(rec.published_at_utc);\n  return {\n    source,\n    source_record_id: rec.source_record_id || null,\n    published_at_utc: pub,\n    first_seen_at_utc: nowIso,\n    ...availability(pub, nowIso),\n    ingestion_run_id: RUN.ingestion_run_id,\n    query_version: RUN.query_version,\n    url: rec.url || null,\n    title: rec.title || '',\n    text_raw: rec.text_raw || '',\n    source_domain: rec.source_domain || domainOf(rec.url),\n    language: rec.language || null,\n    raw_payload: JSON.stringify(rec.raw || {}).slice(0, 4000),\n  };\n}\n\nfunction failed(source, items) {\n  // Branch nodes use \"continue on error\": surface the failure as a row for the run report.\n  const e = items.find(i => i.json && i.json.error);\n  return e ? [{ json: { source, _error: String(e.json.error.message || e.json.error) } }] : null;\n}\n\n// ---- node code ----\nconst items = $input.all();\nconst f = failed('sec_edgar', items); if (f) return f;\nconst r = items[0].json.filings && items[0].json.filings.recent;\nif (!r) return [];\nconst since = new Date(Date.now() - 30 * 864e5);   // filings are rare; look back 30 days\nconst out = [];\nfor (let k = 0; k < r.accessionNumber.length; k++) {\n  const accepted = r.acceptanceDateTime[k];\n  if (new Date(accepted) < since) continue;\n  const acc = r.accessionNumber[k];\n  const url = `https://www.sec.gov/Archives/edgar/data/320193/${acc.replace(/-/g, '')}/${r.primaryDocument[k]}`;\n  out.push({\n    json: row('sec_edgar', {\n      source_record_id: acc,\n      published_at_utc: accepted,           // EDGAR acceptance time = when the market could see it\n      url,\n      title: `Apple ${r.form[k]}: ${r.primaryDocDescription[k] || r.form[k]}`,\n      source_domain: 'sec.gov',\n      language: 'en',\n      raw: { form: r.form[k], filingDate: r.filingDate[k], items: r.items ? r.items[k] : null },\n    }),\n  });\n}\nreturn out;\n"
+      },
+      "id": "f5a1d8f8-7e4b-56d7-ae70-567cb9268a6b",
+      "name": "Normalize SEC",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        700
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "id": "18d76276-68d5-5e6f-9b48-9d0d8bb0691d",
+      "name": "Merge Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1000,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Deterministic gate: canonical URL, relevance rule, keys, in-batch duplicate clusters.\n// Raw rows are never dropped here; they are flagged so the agent and storage can decide.\n\nfunction fnv1a(s) {           // tiny stable hash (built-in crypto is often disabled in n8n Code)\n  let h = 0x811c9dc5;\n  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }\n  return h.toString(16).padStart(8, '0');\n}\n\nfunction canonical(u) {\n  try {\n    const x = new URL(u);\n    x.hash = '';\n    [...x.searchParams.keys()].forEach(k => { if (/^(utm_|fbclid|gclid|mc_|ref$|cmpid)/i.test(k)) x.searchParams.delete(k); });\n    return (x.hostname.replace(/^www\\./, '').toLowerCase() + x.pathname.replace(/\\/$/, '') + (x.search || ''));\n  } catch (e) { return null; }\n}\n\nfunction titleKey(t) {\n  return String(t || '').replace(/\\s[-|\u2013]\\s[^-|\u2013]{2,60}$/, '').toLowerCase()\n    .replace(/[^a-z0-9 ]/g, ' ').split(/\\s+/).filter(w => w.length > 2).sort().join(' ');\n}\n\nconst STRONG = /\\b(AAPL|Apple Inc|Tim Cook|Cupertino|iPhone|iPad|MacBook|Vision Pro|App Store|AirPods|Apple Watch|Apple Intelligence|iOS \\d+|Apple Pay|Apple TV\\+|Apple Music|Siri)\\b/i;\nconst APPLE = /\\bApple('s)?\\b/;\nconst FRUIT = /\\b(apple (pie|cider|juice|orchard|tree|picking|recipe|crumble|sauce|vinegar)|big apple|orchard|harvest)\\b/i;\n\nconst rows = $input.all().map(i => i.json).filter(r => r.source && !r._error);  // empty items come from branches with no data\nconst errors = $input.all().map(i => i.json).filter(r => r._error);\nconst seenKey = new Map(), seenCluster = new Map();\n\nconst out = rows.map(r => {\n  const text = `${r.title} ${r.text_raw || ''}`;\n  let relevance = 'reject';\n  if (r.source === 'sec_edgar' || r.source === 'apple_newsroom') relevance = 'primary';\n  else if (STRONG.test(text)) relevance = 'strong';\n  else if (APPLE.test(text) && !FRUIT.test(text)) relevance = 'weak';   // agent decides\n\n  const canonical_url = r.url ? canonical(r.url) : null;\n  const idempotency_key = r.source_record_id\n    ? `${r.source}:${fnv1a(String(r.source_record_id))}`\n    : `${r.source}:url:${fnv1a(canonical_url || r.title)}`;\n  const content_hash = fnv1a(titleKey(r.title));\n\n  const dup_key = seenKey.has(idempotency_key);\n  seenKey.set(idempotency_key, true);\n  const cluster_first = seenCluster.get(content_hash);\n  if (!cluster_first) seenCluster.set(content_hash, idempotency_key);\n\n  const issues = [];\n  if (!r.published_at_utc) issues.push('missing_published_at');\n  if (r.published_at_utc && new Date(r.published_at_utc) > new Date(r.first_seen_at_utc)) issues.push('published_in_future');\n  if (!r.url) issues.push('missing_url');\n  if (!r.title) issues.push('missing_title');\n\n  return {\n    json: {\n      ...r,\n      canonical_url,\n      idempotency_key,\n      content_hash,\n      dedup_cluster: content_hash,\n      is_duplicate_key: dup_key,\n      is_repeat_story: Boolean(cluster_first),\n      relevance_rule: relevance,\n      needs_agent_review: relevance === 'weak' || issues.length > 0,\n      audit_issues: issues.join(','),\n    },\n  };\n});\n\nreturn out.concat(errors.map(e => ({ json: { ...e, audit_issues: 'source_failed' } })));\n"
+      },
+      "id": "d38007be-4660-525d-bea1-653d46e987bd",
+      "name": "Audit + Dedupe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1240,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One summary item per run: what each source returned and how much was usable.\nconst rows = $input.all().map(i => i.json);\nconst RUN = $('Run Config').first().json;\nconst by = {};\nfor (const r of rows) {\n  if (!r.source) continue;\n  const s = r.source || 'unknown';\n  by[s] = by[s] || { returned: 0, primary: 0, strong: 0, weak: 0, reject: 0, repeat_story: 0, issues: 0, failed: null };\n  if (r._error) { by[s].failed = r._error; continue; }\n  by[s].returned++;\n  by[s][r.relevance_rule]++;\n  if (r.is_repeat_story) by[s].repeat_story++;\n  if (r.audit_issues) by[s].issues++;\n}\nreturn [{ json: { ingestion_run_id: RUN.ingestion_run_id, query_version: RUN.query_version,\n  started_at_utc: RUN.first_seen_at_utc, finished_at_utc: new Date().toISOString(), sources: by } }];\n"
+      },
+      "id": "5ed32c8e-db87-58e5-b3da-ddd511b7c2b9",
+      "name": "Run Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        560
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Run Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Config": {
+      "main": [
+        [
+          {
+            "node": "GDELT DOC (JSON)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Google News RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Apple Newsroom RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SEC EDGAR Submissions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GDELT DOC (JSON)": {
+      "main": [
+        [
+          {
+            "node": "Normalize GDELT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google News RSS": {
+      "main": [
+        [
+          {
+            "node": "Normalize Google News",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apple Newsroom RSS": {
+      "main": [
+        [
+          {
+            "node": "Normalize Apple Newsroom",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SEC EDGAR Submissions": {
+      "main": [
+        [
+          {
+            "node": "Normalize SEC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize GDELT": {
+      "main": [
+        [
+          {
+            "node": "Merge Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Google News": {
+      "main": [
+        [
+          {
+            "node": "Merge Sources",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Normalize Apple Newsroom": {
+      "main": [
+        [
+          {
+            "node": "Merge Sources",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Normalize SEC": {
+      "main": [
+        [
+          {
+            "node": "Merge Sources",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Merge Sources": {
+      "main": [
+        [
+          {
+            "node": "Audit + Dedupe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit + Dedupe": {
+      "main": [
+        [
+          {
+            "node": "Run Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/New_York"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

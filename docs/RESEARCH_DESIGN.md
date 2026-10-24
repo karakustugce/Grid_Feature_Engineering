@@ -95,9 +95,9 @@ A single person's one-week diary is too small and specific to serve as a reliabl
 - Epochs apply only to neural networks. Establish data and baseline performance first; if a small neural model is later justified, use validation and early stopping. More epochs can lower training error while worsening unseen forecasts.
 - Report dollar MAE, baseline comparison, sample dates, missingness, and error in high-volatility/news-event periods. Keep the final test untouched until feature and model choices are fixed.
 
-## 7. First implementation milestone
+## 7. Current milestone
 
-The repository now has a manual n8n pilot for one source. Inspect its actual returned records before adding more branches. Do not build the training matrix until the first source branch's timestamps, query coverage, normalization, and duplicates are visible.
+Feature builders, the text matrix, the 80/20 evaluation and leakage tests are written against the raw-event contract and checked on synthetic data (`scripts/run_synthetic_demo.py`). Workflow 02 collects four sources into that contract. Next: run workflow 02 for a week, inspect the run reports, choose storage, then export `events.csv` and run `scripts/run_real.py`. No model result counts until it runs on real collected data.
 
 ## References
 

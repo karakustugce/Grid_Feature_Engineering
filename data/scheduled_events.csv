@@ -1,0 +1,5 @@
+event_type,event_time_utc,announced_at_utc,timing,label,source_url,verified
+apple_event,2023-09-12T17:00:00Z,2023-08-29T17:00:00Z,intraday,Wonderlust (iPhone 15),,false
+apple_event,2024-09-09T17:00:00Z,2024-08-26T17:00:00Z,intraday,It's Glowtime (iPhone 16),,false
+apple_event,2025-09-09T17:00:00Z,2025-08-26T17:00:00Z,intraday,Awe dropping (iPhone 17),,false
+earnings,2025-10-30T20:30:00Z,2025-10-02T12:00:00Z,amc,FY25 Q4 results,,false
