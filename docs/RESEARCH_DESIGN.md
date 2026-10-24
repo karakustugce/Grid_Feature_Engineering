@@ -43,7 +43,7 @@ Keep secrets in n8n credentials or environment variables. Never commit API token
 
 | Source | Role | Constraint |
 |---|---|---|
-| GDELT DOC 2.0 | Broad online-news discovery, including monitored non-English coverage | The DOC API describes a rolling three-month window. Article-list mode returns at most 250 results, so it cannot prove exhaustive global coverage. Use overlapping windows and deduplication. |
+| GDELT DOC 2.0 | Broad online-news discovery, including monitored non-English coverage | The DOC API describes a rolling three-month window. Article-list mode returns at most 250 results, and RSS output provides titles and URLs rather than guaranteed full article text. It cannot prove exhaustive global coverage. Use overlapping windows and deduplication; obtain full text later from permitted publisher/provider sources. |
 | Apple Newsroom | Primary product, leadership, and company announcements | Company-authored announcements only, not general coverage. |
 | SEC EDGAR | Official filings and material disclosures | Use Apple's CIK and retain filing type and time. Public submissions APIs do not require an API key; follow SEC fair-access guidance. Filings are a distinct event source, not ordinary news. |
 | X API | Public posts mentioning Apple, AAPL, selected products, or accounts | Recent Search covers the last seven days. Full-archive search has different access requirements. Use an authorized app/token; do not assume the API exposes every post. |
@@ -61,7 +61,7 @@ Keep source collection separate from daily feature generation and model training
 6. **Schedule:** after the manual pilot works, use n8n Schedule Trigger. Set workflow timezone explicitly to America/New_York, test daylight-saving changes, and publish the workflow. Keep news collection running outside market hours so weekend and after-hours events are captured.
 7. **Review gate:** use deterministic checks for required fields, timestamp order, pagination completion, and duplicates. An AI agent may add structured labels for company relevance, event type, tone, and uncertainty. Store its model and prompt version. It must leave raw text unchanged and must not invent missing values. Keep uncertain items for review.
 
-For each n8n run, record start/end time, source, query version, requested interval, page/cursor count, response count, retry/error status, and new versus duplicate records. Add an importable workflow after the source pilot and n8n version are known.
+For each n8n run, record start/end time, source, query version, requested interval, page/cursor count, response count, retry/error status, and new versus duplicate records. The first importable workflow is at [workflows/01_gdelt_apple_news_pilot.json](../workflows/01_gdelt_apple_news_pilot.json). It is a manual GDELT pilot. Inspect its actual output before extending it or selecting a persistent storage backend.
 
 ## 5. Daily feature row
 
@@ -97,7 +97,7 @@ A single person's one-week diary is too small and specific to serve as a reliabl
 
 ## 7. First implementation milestone
 
-The repository is at the design stage. The next small engineering deliverable is an importable n8n workflow for one source, followed by inspection of its actual returned records. Do not build the training matrix until the first source branch's timestamps, query coverage, normalization, and duplicates are visible.
+The repository now has a manual n8n pilot for one source. Inspect its actual returned records before adding more branches. Do not build the training matrix until the first source branch's timestamps, query coverage, normalization, and duplicates are visible.
 
 ## References
 
