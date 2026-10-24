@@ -31,7 +31,7 @@ def assign_windows(events: pd.DataFrame, cutoffs: pd.Series) -> pd.DataFrame:
     ev = events.copy()
     ev["available_at_utc"] = pd.to_datetime(ev["available_at_utc"], utc=True)
     c = pd.to_datetime(cutoffs, utc=True).sort_values()
-    cvals = pd.DatetimeIndex(c.values)
+    cvals = pd.DatetimeIndex(c.array)
     if cvals.tz is None:
         cvals = cvals.tz_localize("UTC")
     pos = cvals.searchsorted(pd.DatetimeIndex(ev["available_at_utc"]), side="left")

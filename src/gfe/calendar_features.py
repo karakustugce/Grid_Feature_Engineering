@@ -48,7 +48,7 @@ def build_calendar_features(start: str, end: str, exchange: str = "XNYS") -> pd.
     t = pd.DatetimeIndex(df["target_session"])
     # 1. Weekday of the target session (Monday effect, Friday effect).
     for i, name in enumerate(["mon", "tue", "wed", "thu", "fri"]):
-        df[f"tgt_dow_{name}"] = (t.weekday == i).astype(int)
+        df[f"tgt_dow_{name}"] = (t.day_of_week == i).astype(int)
 
     # 2. Closed-market gap: weekends and holidays let news and risk accumulate
     #    while nobody can trade (the "events break out on the weekend" idea).
@@ -105,8 +105,8 @@ def build_calendar_features(start: str, end: str, exchange: str = "XNYS") -> pd.
     # 6. Holidays and early closes (pre-holiday effect, thin liquidity).
     after_target = s[2:]
     after_gap = np.append((after_target - t[: len(after_target)]).days, [np.nan] * (len(t) - len(after_target)))
-    df["tgt_is_pre_holiday"] = ((after_gap > 1) & (pd.Series(t.weekday).values != 4)).astype(int)
-    df["tgt_is_post_holiday"] = ((gap > 1) & (t.weekday != 0)).astype(int)
+    df["tgt_is_pre_holiday"] = ((after_gap > 1) & (pd.Series(t.day_of_week).values != 4)).astype(int)
+    df["tgt_is_post_holiday"] = ((gap > 1) & (t.day_of_week != 0)).astype(int)
     early = set(cal.early_closes) if hasattr(cal, "early_closes") else set()
     df["tgt_is_early_close"] = [int(x in early) for x in t]
 
