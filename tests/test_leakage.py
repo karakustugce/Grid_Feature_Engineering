@@ -66,3 +66,16 @@ def test_split_is_chronological():
     dev, test = chrono_split(df)
     assert dev.index.max() < test.index.min()
     assert len(test) == 20
+
+
+def test_mixed_iso_timestamps_parse():
+    """Supabase exports mix timestamps with and without fractional seconds."""
+    import pandas as pd
+    from gfe.text_features import assign_windows
+    ev = pd.DataFrame({
+        "available_at_utc": ["2026-09-25T02:45:07.123456+00:00", "2026-09-25T02:45:07+00:00"],
+        "title": ["a", "b"], "source": ["x", "y"], "source_domain": ["x", "y"],
+    })
+    cut = pd.to_datetime(["2026-09-24T20:30:00Z", "2026-09-25T20:30:00Z"], utc=True)
+    out = assign_windows(ev, pd.Series(cut))
+    assert len(out) == 2

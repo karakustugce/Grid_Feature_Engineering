@@ -123,7 +123,7 @@ def add_scheduled_events(cal_df: pd.DataFrame, events: pd.DataFrame) -> pd.DataF
     out = cal_df.copy()
     ev = events.copy()
     for col in ["event_time_utc", "announced_at_utc"]:
-        ev[col] = pd.to_datetime(ev[col], utc=True)
+        ev[col] = pd.to_datetime(ev[col], utc=True, format="ISO8601")
     cal = xcals.get_calendar("XNYS")
     local_day = ev["event_time_utc"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None)
     reaction = []
